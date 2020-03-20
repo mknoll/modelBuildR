@@ -1,0 +1,149 @@
+---
+title: "modelBuildR"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{modelBuildR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(modelBuildR)
+```
+
+## Load data 
+```{r}
+meta <- read.csv(paste(system.file("extdata", package="modelBuildR"), "/meta.csv",sep=""), row.names=1)
+data <- read.csv(paste(system.file("extdata", package="modelBuildR"), "/data_m.csv", sep=""), row.names=1)
+
+ggplot2::ggplot(meta, ggplot2::aes(x=CONT)) + ggplot2::geom_histogram()
+ggplot2::ggplot(meta, ggplot2::aes(x=BIN)) + ggplot2::geom_histogram()
+```
+
+# Logistic regression: binary classification
+
+## Create instance 
+```{r}
+# Please assure manually that order of cols of data corresponds
+# to order of rows in meta
+
+obj <- new("fitModel", data, meta, var="BIN", type="lr")
+```
+
+## test differences 
+Test influence of grouping covariate (will be the predicted variable)
+on the dependent variables (features)
+
+Likelihood ratio test p-value (per model) to select features.
+
+```{r}
+## no covar
+obj <- testSign(obj, pCut=0.05, pAdj="none")
+
+### with covariates
+objC <- testSign(obj, pCut=0.05, pAdj="none", 
+		frm0=as.formula(VAL~CONT),
+		frm=as.formula(VAL~CONT+BIN))
+```
+
+## crossvalidation  
+```{r}
+obj <- cv(obj)
+
+## w/ covar
+objC <- cv(objC, frm="~CONT+BIN")
+```
+
+## model fitting 
+```{r warning=FALSE}
+obj <- fitM(obj)
+fit <- obj@model
+fit
+
+###covar
+objC <- fitM(objC)
+objC@model
+```
+
+## plot
+```{r}
+### obtain model predictions
+pr <- predict(fit, newdata=data.frame(t(obj@dataSign)), interval="prediction", se.fit=T)
+df <- data.frame(do.call(cbind, pr), obj@meta)
+df <- df[order(df[,1]),]
+df$x <- 1:length(df[,1])
+ggplot2::ggplot(df, ggplot2::aes(y=fit, x=x, col=factor(BIN))) + ggplot2::geom_point() #+ ggplot2::geom_errorbar(ggplot2::aes(ymin=fit-se.fit, ymax=fit+se.fit)) 
+rocDetail(df$fit, df$BIN)
+
+### 
+pr <- predict(fit, type="response", newdata=data.frame(t(obj@dataSign)), interval="prediction", se.fit=T)
+df <- data.frame(do.call(cbind, pr), obj@meta)
+df <- df[order(df[,1]),]
+df$x <- 1:length(df[,1])
+ggplot2::ggplot(df, ggplot2::aes(y=fit, x=x, col=factor(BIN))) + ggplot2::geom_point() + ggplot2::geom_errorbar(ggplot2::aes(ymin=fit-se.fit, ymax=fit+se.fit)) 
+rocDetail(df$fit, df$BIN)
+```
+
+
+# Linear regression
+
+## Create instance 
+```{r}
+# Please assure manually that order of cols of data corresponds
+# to order of rows in meta
+obj <- new("fitModel", data, meta, var="CONT", type="lm")
+```
+
+## test differences 
+Test influence of grouping covariate (will be the predicted variable)
+on the dependent variables (features)
+
+Likelihood ratio test p-value (per model) to select features.
+
+```{r}
+obj <- testSign(obj, pCut=0.05, pAdj="none")
+
+### with covariates
+objC <- testSign(obj, pCut=0.05, pAdj="none", 
+		frm0=as.formula(VAL~CONT),
+		frm=as.formula(VAL~CONT+BIN))
+
+```
+
+## crossvalidation 
+```{r}
+## non adjusted
+obj <- cv(obj)
+
+##adjusted
+objC <- cv(obj, frm="~CONT+BIN")
+```
+
+## model fitting 
+```{r warning=FALSE}
+obj <- fitM(obj)
+fit <- obj@model
+fit
+
+###covar
+objC <- fitM(objC)
+objC@model
+```
+
+## plot
+```{r}
+### obtain model predictions
+pr <- predict(fit, newdata=data.frame(t(obj@dataSign)), interval="prediction", se.fit=T)
+df <- data.frame(do.call(cbind, pr), obj@meta)
+df <- df[order(df[,1]),]
+df$x <- 1:length(df[,1])
+ggplot2::ggplot(df, ggplot2::aes(y=fit, x=x, col=factor(CONT))) + ggplot2::geom_point() + ggplot2::geom_errorbar(ggplot2::aes(ymin=fit-se.fit, ymax=fit+se.fit))
+```
+
