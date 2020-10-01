@@ -1,7 +1,7 @@
 Package: modelBuildR
 Title: An R package implementing a heuristic for feature selection and model building
-Version: 0.1.0
-Date: 2020-03-13
+Version: 0.1.1
+Date: 2020-10-01
 Authors@R: person("Maximilian", "Knoll", email = "m.knoll@dkfz.de", role = c("aut", "cre"))
 Description: The present package provides a heuristic to select features for a binary or continuous outcome byapplying a prefiltering step: model based testing and crossvalidation with and without inclusion of additional covariates. 
 Depends: R (>= 3.6.0)
