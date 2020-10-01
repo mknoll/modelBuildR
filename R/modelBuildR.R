@@ -3,9 +3,12 @@
 #' @description Fit a model with the selected features
 #'
 #' @param obj fitModel instance 
+#' @param metr Metric used for model evaluation, can be 
+#' AIC (default), BIC or CV. In case of CV, metrCut can be adjusted
+#' @param metrCut 
 #'
 #' @export
-fitM <- function(obj, ...) {
+fitM <- function(obj, metr="AIC", metrCut=NULL, ...) {
     ## max number of features < number of obs
     to <- ifelse(length(obj@cv[,1]) > length(obj@meta[,1]), length(obj@meta[,1]), length(obj@cv[,1])) 
     if (length(obj@cv[,1]) > length(obj@meta[,1])) {
@@ -41,7 +44,108 @@ fitM <- function(obj, ...) {
 	warning("Model with NA estimates!")
     }
 
-    fitS <- step(fit, ...)
+    if (metr == "AIC") {
+	fitS <- step(fit, ...)
+    } else if (metr == "BIC") {
+	fitS <- step(fit, k=log(to), ...)
+    } else if (metr == "CV") {
+	feats <- obj@cv[1:to,2]
+	if (length(feats) <= 2) {
+	    warning("Not enough features!")
+	    fitS <- fit
+	} else {
+	    if (obj@type == "lr") {
+		metrCut <- ifelse(is.null(metrCut), 0.9,metrCut)
+		maxCV <- NULL
+		fitB <- NULL
+		feats <- obj@cv[1:to,2]
+    
+		## full model
+		frm <- as.formula(paste(obj@var, "~", paste(feats, collapse="+")))
+		fit <- glm(frm, data=dat2, family=binomial(link=logit))
+		cv <- cv.binary(fit)
+		maxCV[[length(maxCV)+1]] <- cv$acc.cv
+		fitB <- fit
+
+		while (T) {
+		    coll <- list()
+		    for (i in to:1) {
+			frm <- as.formula(paste(obj@var, "~", paste(feats[-i], collapse="+")))
+			fit <- glm(frm, data=dat2, family=binomial(link=logit))
+			cv <- cv.binary(fit)
+			coll[[length(coll)+1]] <- data.frame(CV=cv$acc.cv, FEAT=feats[i])
+		    }
+		    coll <- do.call(rbind, coll)
+		    rmFeat <- coll$FEAT[which.min(coll$CV)]
+
+		    ## refit without lowest accuracy feature
+		    frm <- as.formula(paste(obj@var, "~", paste(feats[-which(feats == rmFeat)], collapse="+")))
+		    fit <- glm(frm, data=dat2, family=binomial(link=logit))
+
+		    curMaxCVac <- coll$CV[which.max(coll$CV)]
+		    maxCV[[length(maxCV)+1]] <-curMaxCVac      
+		    if (curMaxCVac < 0.9*max(unlist(maxCV))) {
+			print("CV accuracy below threshold. Stopping.")
+			break
+		    } 
+
+		    fitB <- fit
+		    feats <- feats[-which(feats == rmFeat)]
+		    if (length(feats) == 1) { 
+			warning("All but one feature removed! Stopping!")
+			break                              
+		    }
+		}
+		fitS <- fitB # previous iteration
+	    } else if (obj@type == "lm") {
+		metrCut <- ifelse(is.null(metrCut), 0.75,metrCut)
+		maxMS <- NULL
+		fitB <- NULL
+		feats <- obj@cv[1:to,2]
+
+		## full model
+		frm <- as.formula(paste(obj@var, "~", paste(feats, collapse="+")))
+		fit <- lm(frm, data=dat2)
+		res <- cv.lm(dat2, fit, plotit=F)
+		maxMS[[length(maxMS)+1]] <- attr(res, "ms")
+
+		while (T) {
+		    coll <- list()
+		    for (i in to:1) {                                       
+			frm <- as.formula(paste(obj@var, "~", paste(feats[-i], collapse="+")))
+			fit <- lm(frm, data=dat2)
+			res <- cv.lm(dat2, fit, plotit=F)
+			coll[[length(coll)+1]] <- data.frame(MS=attr(res, "ms"), FEAT=colnames(sub)[i])
+		    }
+		    coll <- do.call(rbind, coll)
+		    rmFeat <- coll$FEAT[which.max(coll$MS)]
+
+		    ## refit without highest MS feature
+		    frm <- as.formula(paste(obj@var, "~", paste(feats[-which(feats == rmFeat)], collapse="+")))
+		    fit <- lm(frm, data=dat2)
+
+		    curMaxMS <- coll$MS[which.max(coll$MS)]
+		    maxMS[[length(maxMS)+1]] <-curMaxMS
+		    if (curMaxMS < 0.75*max(unlist(maxMS))) { 
+			print("Current max MS < 0.75 max observed MS. Stop.")
+			break
+		    } 
+		    fitB <- fit
+
+		    feats <- feats[-which(feats == rmFeat)]
+		    if (length(sub[1,]) == 1) { 
+			warning("All but one feature removed!")
+			break
+		    }
+		}
+		fitS <- fit ##current iteration
+	    } else {
+		stop("This should not happen! Stopping!")
+	    }
+	} 
+    } else {
+	stop("Unknown metr parameter! Stopping!")
+    }
     obj@model <- fitS
 
     ### TODO currently defunc -> separate function?
